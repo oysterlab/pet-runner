@@ -145,10 +145,9 @@
   const images = loadAssets(ASSETS);
   const pointer = { slide: false };
   const uiRects = {
-    restart: { x: 415, y: 802, w: 180, h: 60 },
-    book: { x: 613, y: 802, w: 180, h: 60 },
-    snapshot: { x: 811, y: 802, w: 180, h: 60 },
-    download: { x: 1009, y: 802, w: 180, h: 60 },
+    restart: { x: 514, y: 802, w: 180, h: 60 },
+    book: { x: 712, y: 802, w: 180, h: 60 },
+    install: { x: 910, y: 802, w: 180, h: 60 },
     closeBook: { x: 1117, y: 765, w: 170, h: 58 },
   };
   const stickerBookGrid = { x: 438, y: 252, w: 840 };
@@ -158,7 +157,10 @@
   let lastFrame = performance.now();
   let bgOffset = 0;
   let floorOffset = 0;
+  let installPromptEvent = null;
+  let appInstalled = isPwaInstalled();
 
+  registerServiceWorker();
   bindInput();
   resetGame();
   requestAnimationFrame(loop);
@@ -215,6 +217,31 @@
     } catch {
       // Play can continue even when storage is blocked.
     }
+  }
+
+  function registerServiceWorker() {
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("sw.js").catch(() => {});
+    }
+
+    window.addEventListener("beforeinstallprompt", (event) => {
+      event.preventDefault();
+      installPromptEvent = event;
+    });
+
+    window.addEventListener("appinstalled", () => {
+      appInstalled = true;
+      installPromptEvent = null;
+      pushMessage("로컬 설치 완료", "#c8ff9d");
+    });
+  }
+
+  function isPwaInstalled() {
+    return (
+      window.matchMedia?.("(display-mode: fullscreen)")?.matches ||
+      window.matchMedia?.("(display-mode: standalone)")?.matches ||
+      navigator.standalone === true
+    );
   }
 
   function completedStickerCount() {
@@ -475,8 +502,7 @@
         result: {
           restart: uiRects.restart,
           book: uiRects.book,
-          snapshot: uiRects.snapshot,
-          download: uiRects.download,
+          install: uiRects.install,
         },
         closeBook: uiRects.closeBook,
         bookGrid: { ...stickerBookGrid, columns: 2 },
@@ -507,7 +533,7 @@
       const resultButtonW = Math.min(230, panel.w - 48);
       const resultX = panel.x + (panel.w - resultButtonW) / 2;
       const resultY =
-        panel.y + panel.h - margin - resultButtonH * 4 - resultGap * 3;
+        panel.y + panel.h - margin - resultButtonH * 3 - resultGap * 2;
       result.restart = { x: resultX, y: resultY, w: resultButtonW, h: resultButtonH };
       result.book = {
         x: resultX,
@@ -515,21 +541,15 @@
         w: resultButtonW,
         h: resultButtonH,
       };
-      result.snapshot = {
+      result.install = {
         x: resultX,
         y: resultY + (resultButtonH + resultGap) * 2,
         w: resultButtonW,
         h: resultButtonH,
       };
-      result.download = {
-        x: resultX,
-        y: resultY + (resultButtonH + resultGap) * 3,
-        w: resultButtonW,
-        h: resultButtonH,
-      };
     } else {
-      const resultButtonW = Math.min(short ? 150 : 170, (panel.w - margin * 2 - resultGap * 3) / 4);
-      const totalW = resultButtonW * 4 + resultGap * 3;
+      const resultButtonW = Math.min(short ? 150 : 170, (panel.w - margin * 2 - resultGap * 2) / 3);
+      const totalW = resultButtonW * 3 + resultGap * 2;
       const resultX = panel.x + (panel.w - totalW) / 2;
       const resultY = panel.y + panel.h - margin - resultButtonH;
       result.restart = { x: resultX, y: resultY, w: resultButtonW, h: resultButtonH };
@@ -539,14 +559,8 @@
         w: resultButtonW,
         h: resultButtonH,
       };
-      result.snapshot = {
+      result.install = {
         x: resultX + (resultButtonW + resultGap) * 2,
-        y: resultY,
-        w: resultButtonW,
-        h: resultButtonH,
-      };
-      result.download = {
-        x: resultX + (resultButtonW + resultGap) * 3,
         y: resultY,
         w: resultButtonW,
         h: resultButtonH,
@@ -627,8 +641,7 @@
     if (game.phase === "result") {
       if (inside(point, layout.result.restart)) resetGame();
       if (inside(point, layout.result.book)) game.showBook = true;
-      if (inside(point, layout.result.snapshot)) saveSnapshot();
-      if (inside(point, layout.result.download)) saveLocalResult();
+      if (inside(point, layout.result.install)) installPwa();
       return;
     }
 
@@ -1299,20 +1312,34 @@
     saveBook();
   }
 
-  function saveSnapshot() {
-    downloadCanvasImage(`pet-runner-scene-${Date.now()}.png`, "플레이 장면 저장");
-  }
+  async function installPwa() {
+    if (appInstalled || isPwaInstalled()) {
+      pushMessage("이미 로컬에 설치됨", "#c8ff9d");
+      return;
+    }
 
-  function saveLocalResult() {
-    downloadCanvasImage(`pet-runner-result-${Date.now()}.png`, "결과 이미지 저장");
-  }
+    if (installPromptEvent) {
+      const promptEvent = installPromptEvent;
+      installPromptEvent = null;
+      promptEvent.prompt();
+      const choice = await promptEvent.userChoice;
+      if (choice?.outcome === "accepted") {
+        appInstalled = true;
+        pushMessage("로컬 설치 완료", "#c8ff9d");
+      } else {
+        pushMessage("설치가 취소됨", "#ffd6de");
+      }
+      return;
+    }
 
-  function downloadCanvasImage(filename, message) {
-    const link = document.createElement("a");
-    link.download = filename;
-    link.href = canvas.toDataURL("image/png");
-    link.click();
-    pushMessage(message, "#ffffff");
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.ready
+        .then(() => pushMessage("브라우저 메뉴에서 홈 화면에 추가", "#fff2a8"))
+        .catch(() => pushMessage("잠시 후 다시 설치해보세요", "#ffd6de"));
+      return;
+    }
+
+    pushMessage("이 브라우저는 설치를 지원하지 않음", "#ffd6de");
   }
 
   function downloadSticker(sticker) {
@@ -1994,8 +2021,7 @@
     drawResultStickerShelf("남은 스티커", remaining, 450, 488, 704, 236, "모두 획득", true);
     resultButton(uiRects.restart, "다시 달리기", "#ff5e82");
     resultButton(uiRects.book, "스티커북", "#6fc3ff");
-    resultButton(uiRects.snapshot, "장면 저장", "#ffd466");
-    resultButton(uiRects.download, "로컬 저장", "#95df7a");
+    resultButton(uiRects.install, "로컬 설치", "#95df7a");
   }
 
   function drawMobileResultOverlay(layout) {
@@ -2034,8 +2060,7 @@
     const buttonTop = Math.min(
       layout.result.restart.y,
       layout.result.book.y,
-      layout.result.snapshot.y,
-      layout.result.download.y,
+      layout.result.install.y,
     );
     const shelfX = panel.x + (compact ? 18 : 28);
     const shelfW = panel.w - (compact ? 36 : 56);
@@ -2050,8 +2075,7 @@
     drawResultStickerShelfWrapped("남은 스티커", remaining, shelfX, remainingY, shelfW, remainingH, "모두 획득", true, short);
     resultButton(layout.result.restart, "다시 달리기", "#ff5e82");
     resultButton(layout.result.book, "스티커북", "#6fc3ff");
-    resultButton(layout.result.snapshot, "장면 저장", "#ffd466");
-    resultButton(layout.result.download, "로컬 저장", "#95df7a");
+    resultButton(layout.result.install, "로컬 설치", "#95df7a");
   }
 
   function drawResultCelebration() {

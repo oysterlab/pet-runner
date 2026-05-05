@@ -1,0 +1,25 @@
+{
+  "name": "Pet Runner: Sticker Quest",
+  "short_name": "Pet Runner",
+  "description": "A mobile-first cat runner game with sticker rewards.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#100d0b",
+  "theme_color": "#1d1511",
+  "icons": [
+    {
+      "src": "assets/generated/pwa/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/generated/pwa/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
