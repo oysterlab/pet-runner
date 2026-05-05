@@ -145,9 +145,10 @@
   const images = loadAssets(ASSETS);
   const pointer = { slide: false };
   const uiRects = {
-    restart: { x: 514, y: 802, w: 180, h: 60 },
-    book: { x: 712, y: 802, w: 180, h: 60 },
-    snapshot: { x: 910, y: 802, w: 180, h: 60 },
+    restart: { x: 415, y: 802, w: 180, h: 60 },
+    book: { x: 613, y: 802, w: 180, h: 60 },
+    snapshot: { x: 811, y: 802, w: 180, h: 60 },
+    download: { x: 1009, y: 802, w: 180, h: 60 },
     closeBook: { x: 1117, y: 765, w: 170, h: 58 },
   };
   const stickerBookGrid = { x: 438, y: 252, w: 840 };
@@ -351,6 +352,7 @@
 
     canvas.addEventListener("pointerdown", (event) => {
       event.preventDefault();
+      requestMobileFullscreen();
       const point = canvasPoint(event);
       handlePointer(point);
     });
@@ -384,6 +386,14 @@
 
   function canvasPoint(event) {
     const rect = canvas.getBoundingClientRect();
+    if (canvasIsRotated()) {
+      const visualX = event.clientX - rect.left;
+      const visualY = event.clientY - rect.top;
+      return {
+        x: (visualY / Math.max(1, rect.height)) * W,
+        y: ((rect.width - visualX) / Math.max(1, rect.width)) * H,
+      };
+    }
     return {
       x: ((event.clientX - rect.left) / rect.width) * W,
       y: ((event.clientY - rect.top) / rect.height) * H,
@@ -400,12 +410,48 @@
     const top = clamp(Math.max(0, rect.top), rect.top, rect.bottom);
     const right = clamp(Math.min(viewportW, rect.right), rect.left, rect.right);
     const bottom = clamp(Math.min(viewportH, rect.bottom), rect.top, rect.bottom);
+    if (canvasIsRotated()) {
+      const visualLeft = left - rect.left;
+      const visualTop = top - rect.top;
+      const visualRight = right - rect.left;
+      const visualBottom = bottom - rect.top;
+      const gameLeft = (visualTop / cssH) * W;
+      const gameRight = (visualBottom / cssH) * W;
+      const gameTop = ((cssW - visualRight) / cssW) * H;
+      const gameBottom = ((cssW - visualLeft) / cssW) * H;
+      return {
+        x: clamp(gameLeft, 0, W),
+        y: clamp(gameTop, 0, H),
+        w: Math.max(1, clamp(gameRight, 0, W) - clamp(gameLeft, 0, W)),
+        h: Math.max(1, clamp(gameBottom, 0, H) - clamp(gameTop, 0, H)),
+      };
+    }
     return {
       x: ((left - rect.left) / cssW) * W,
       y: ((top - rect.top) / cssH) * H,
       w: Math.max(1, ((right - left) / cssW) * W),
       h: Math.max(1, ((bottom - top) / cssH) * H),
     };
+  }
+
+  function canvasIsRotated() {
+    const transform = getComputedStyle(canvas).transform;
+    if (!transform || transform === "none") return false;
+    const match = transform.match(/matrix\(([^)]+)\)/);
+    if (!match) return false;
+    const values = match[1].split(",").map((value) => Number(value.trim()));
+    return Math.abs(values[1]) > 0.8 && Math.abs(values[2]) > 0.8;
+  }
+
+  function requestMobileFullscreen() {
+    const mobileViewport = (window.innerWidth || W) <= 900 || (window.innerHeight || H) <= 520;
+    if (!mobileViewport) return;
+    if (!document.fullscreenElement) {
+      const fullscreenRequest = document.documentElement.requestFullscreen?.({ navigationUI: "hide" });
+      fullscreenRequest?.catch(() => {});
+    }
+    const orientationRequest = screen.orientation?.lock?.("landscape");
+    orientationRequest?.catch(() => {});
   }
 
   function currentUiLayout() {
@@ -430,6 +476,7 @@
           restart: uiRects.restart,
           book: uiRects.book,
           snapshot: uiRects.snapshot,
+          download: uiRects.download,
         },
         closeBook: uiRects.closeBook,
         bookGrid: { ...stickerBookGrid, columns: 2 },
@@ -438,9 +485,10 @@
 
     const v = visible;
     const compact = v.w < 720;
+    const rotated = canvasIsRotated();
     const margin = clamp(Math.min(v.w, v.h) * 0.045, 18, 30);
     const rightInset = compact ? margin + 132 : margin;
-    const top = v.y + margin;
+    const top = v.y + margin + (rotated ? 82 : 0);
     const pauseSize = compact ? 58 : 82;
     const buttonSize = clamp(Math.min(v.w * 0.31, v.h * 0.23), 112, 188);
     const controlY = v.y + v.h - margin - buttonSize;
@@ -451,14 +499,15 @@
       h: Math.max(1, v.h - margin * 2),
     };
 
-    const resultButtonH = compact ? 52 : 58;
-    const resultGap = compact ? 10 : 14;
+    const short = !compact && v.h < 620;
+    const resultButtonH = compact ? 52 : short ? 44 : 58;
+    const resultGap = compact ? 10 : short ? 8 : 14;
     const result = {};
     if (compact) {
       const resultButtonW = Math.min(230, panel.w - 48);
       const resultX = panel.x + (panel.w - resultButtonW) / 2;
       const resultY =
-        panel.y + panel.h - margin - resultButtonH * 3 - resultGap * 2;
+        panel.y + panel.h - margin - resultButtonH * 4 - resultGap * 3;
       result.restart = { x: resultX, y: resultY, w: resultButtonW, h: resultButtonH };
       result.book = {
         x: resultX,
@@ -472,9 +521,15 @@
         w: resultButtonW,
         h: resultButtonH,
       };
+      result.download = {
+        x: resultX,
+        y: resultY + (resultButtonH + resultGap) * 3,
+        w: resultButtonW,
+        h: resultButtonH,
+      };
     } else {
-      const resultButtonW = Math.min(190, (panel.w - margin * 2 - resultGap * 2) / 3);
-      const totalW = resultButtonW * 3 + resultGap * 2;
+      const resultButtonW = Math.min(short ? 150 : 170, (panel.w - margin * 2 - resultGap * 3) / 4);
+      const totalW = resultButtonW * 4 + resultGap * 3;
       const resultX = panel.x + (panel.w - totalW) / 2;
       const resultY = panel.y + panel.h - margin - resultButtonH;
       result.restart = { x: resultX, y: resultY, w: resultButtonW, h: resultButtonH };
@@ -490,11 +545,19 @@
         w: resultButtonW,
         h: resultButtonH,
       };
+      result.download = {
+        x: resultX + (resultButtonW + resultGap) * 3,
+        y: resultY,
+        w: resultButtonW,
+        h: resultButtonH,
+      };
     }
 
     return {
       mobile: true,
       compact,
+      short,
+      rotated,
       visible: v,
       margin,
       controls: {
@@ -528,9 +591,9 @@
       },
       shieldGauge: {
         x: v.x + margin,
-        y: top + (compact ? 120 : 86),
-        w: compact ? v.w - margin * 2 : 365,
-        h: compact ? 14 : 18,
+        y: top + (compact ? 128 : 142),
+        w: compact ? v.w - margin * 2 : Math.min(440, v.w - margin * 2),
+        h: compact ? 14 : 16,
       },
       resultPanel: panel,
       result,
@@ -565,6 +628,7 @@
       if (inside(point, layout.result.restart)) resetGame();
       if (inside(point, layout.result.book)) game.showBook = true;
       if (inside(point, layout.result.snapshot)) saveSnapshot();
+      if (inside(point, layout.result.download)) saveLocalResult();
       return;
     }
 
@@ -1236,11 +1300,19 @@
   }
 
   function saveSnapshot() {
+    downloadCanvasImage(`pet-runner-scene-${Date.now()}.png`, "플레이 장면 저장");
+  }
+
+  function saveLocalResult() {
+    downloadCanvasImage(`pet-runner-result-${Date.now()}.png`, "결과 이미지 저장");
+  }
+
+  function downloadCanvasImage(filename, message) {
     const link = document.createElement("a");
-    link.download = `pet-runner-${Date.now()}.png`;
+    link.download = filename;
     link.href = canvas.toDataURL("image/png");
     link.click();
-    pushMessage("플레이 장면 저장", "#ffffff");
+    pushMessage(message, "#ffffff");
   }
 
   function downloadSticker(sticker) {
@@ -1923,11 +1995,13 @@
     resultButton(uiRects.restart, "다시 달리기", "#ff5e82");
     resultButton(uiRects.book, "스티커북", "#6fc3ff");
     resultButton(uiRects.snapshot, "장면 저장", "#ffd466");
+    resultButton(uiRects.download, "로컬 저장", "#95df7a");
   }
 
   function drawMobileResultOverlay(layout) {
     const panel = layout.resultPanel;
     const compact = layout.compact;
+    const short = layout.short;
     ctx.fillStyle = "rgba(0,0,0,0.72)";
     ctx.fillRect(0, 0, W, H);
     drawResultCelebration();
@@ -1940,16 +2014,16 @@
     label(
       game.endedByDamage ? "휴식 시간" : "Clear!",
       panel.x + panel.w / 2,
-      panel.y + (compact ? 46 : 58),
-      compact ? 38 : 54,
+      panel.y + (compact ? 46 : short ? 34 : 58),
+      compact ? 38 : short ? 32 : 54,
       "center",
       "#fff4df",
     );
     plainText(
       `점수 ${formatNumber(game.score)}`,
       panel.x + panel.w / 2,
-      panel.y + (compact ? 88 : 108),
-      compact ? 22 : 30,
+      panel.y + (compact ? 88 : short ? 62 : 108),
+      compact ? 22 : short ? 21 : 30,
       "center",
       "#f4d9ba",
       900,
@@ -1961,19 +2035,23 @@
       layout.result.restart.y,
       layout.result.book.y,
       layout.result.snapshot.y,
+      layout.result.download.y,
     );
     const shelfX = panel.x + (compact ? 18 : 28);
     const shelfW = panel.w - (compact ? 36 : 56);
-    const gainedY = panel.y + (compact ? 120 : 142);
-    const gainedH = compact ? 152 : 180;
-    const remainingY = gainedY + gainedH + (compact ? 12 : 18);
-    const remainingH = Math.max(130, buttonTop - remainingY - (compact ? 14 : 20));
+    const gainedY = panel.y + (compact ? 120 : short ? 78 : 142);
+    const gainedH = compact ? 152 : short ? 88 : 180;
+    const remainingY = gainedY + gainedH + (compact ? 12 : short ? 8 : 18);
+    const remainingH = short
+      ? Math.max(44, buttonTop - remainingY - 8)
+      : Math.max(130, buttonTop - remainingY - (compact ? 14 : 20));
 
-    drawResultStickerShelfWrapped("획득한 스티커", gained, shelfX, gainedY, shelfW, gainedH, "이번 판 획득 없음");
-    drawResultStickerShelfWrapped("남은 스티커", remaining, shelfX, remainingY, shelfW, remainingH, "모두 획득", true);
+    drawResultStickerShelfWrapped("획득한 스티커", gained, shelfX, gainedY, shelfW, gainedH, "이번 판 획득 없음", false, short);
+    drawResultStickerShelfWrapped("남은 스티커", remaining, shelfX, remainingY, shelfW, remainingH, "모두 획득", true, short);
     resultButton(layout.result.restart, "다시 달리기", "#ff5e82");
     resultButton(layout.result.book, "스티커북", "#6fc3ff");
     resultButton(layout.result.snapshot, "장면 저장", "#ffd466");
+    resultButton(layout.result.download, "로컬 저장", "#95df7a");
   }
 
   function drawResultCelebration() {
@@ -2136,36 +2214,37 @@
     });
   }
 
-  function drawResultStickerShelfWrapped(title, stickers, x, y, width, height, emptyText, dim = false) {
+  function drawResultStickerShelfWrapped(title, stickers, x, y, width, height, emptyText, dim = false, hideLabels = false) {
     drawPanel(x, y, width, height, 16, "rgba(255,255,255,0.08)");
-    plainText(title, x + 18, y + 30, Math.min(24, height * 0.19), "left", "#fff4df", 900);
+    const tight = hideLabels || height < 190;
+    plainText(title, x + 18, y + (tight ? 20 : 30), tight ? 14 : Math.min(24, height * 0.19), "left", "#fff4df", 900);
 
     if (!stickers.length) {
-      plainText(emptyText, x + width / 2, y + height / 2 + 12, 22, "center", "#d9c2ad", 800);
+      plainText(emptyText, x + width / 2, y + height / 2 + (tight ? 6 : 12), tight ? 14 : 22, "center", "#d9c2ad", 800);
       return;
     }
 
     const availableW = width - 34;
-    const availableH = Math.max(1, height - 58);
-    const maxCols = Math.max(1, Math.floor(availableW / (dim ? 78 : 96)));
+    const availableH = Math.max(1, height - (tight ? 30 : 58));
+    const maxCols = Math.max(1, Math.floor(availableW / (tight ? 48 : dim ? 78 : 96)));
     const narrow = width < 430;
     const cols = narrow
       ? Math.min(stickers.length, 2)
       : Math.min(stickers.length, Math.max(2, Math.min(3, maxCols)));
     const rows = Math.ceil(stickers.length / cols);
-    const gapX = dim ? 12 : 16;
-    const gapY = dim ? 22 : 26;
+    const gapX = tight ? 8 : dim ? 12 : 16;
+    const gapY = tight ? 8 : dim ? 22 : 26;
     const iconSize = Math.floor(
       Math.min(
-        dim ? 82 : 100,
+        tight ? 42 : dim ? 82 : 100,
         (availableW - gapX * (cols - 1)) / cols,
-        (availableH - gapY * Math.max(0, rows - 1)) / rows - 18,
+        (availableH - gapY * Math.max(0, rows - 1)) / rows - (tight ? 0 : 18),
       ),
     );
-    const safeIcon = Math.max(dim ? 54 : 62, iconSize);
+    const safeIcon = Math.max(tight ? 26 : dim ? 54 : 62, iconSize);
     const totalW = safeIcon * cols + gapX * (cols - 1);
     const startX = x + (width - totalW) / 2;
-    const startY = y + 50;
+    const startY = y + (tight ? 28 : 50);
 
     stickers.forEach((sticker, index) => {
       const col = index % cols;
@@ -2173,7 +2252,9 @@
       const sx = startX + col * (safeIcon + gapX);
       const sy = startY + row * (safeIcon + gapY);
       drawStickerPreview(sticker, sx, sy, safeIcon, dim ? 0.56 : 1);
-      plainText(stickerLabel(sticker), sx + safeIcon / 2, sy + safeIcon + 17, Math.min(15, safeIcon * 0.18), "center", "#fff8eb", 800);
+      if (!tight) {
+        plainText(stickerLabel(sticker), sx + safeIcon / 2, sy + safeIcon + 17, Math.min(15, safeIcon * 0.18), "center", "#fff8eb", 800);
+      }
     });
   }
 

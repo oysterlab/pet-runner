@@ -119,9 +119,10 @@ canvas:focus {
 @media (hover: none) and (orientation: portrait),
   (max-width: 600px) and (orientation: portrait) {
   canvas {
-    top: 0;
-    width: calc((100dvh + 96px) * 1604 / 981);
-    height: calc(100dvh + 96px);
-    transform: translateX(-28%);
+    left: 50%;
+    top: 50%;
+    width: 100dvh;
+    height: calc(100dvh * 981 / 1604);
+    transform: translate(-50%, -50%) rotate(90deg);
   }
 }
