@@ -309,6 +309,7 @@
       spawnItem("shield", 760, itemLaneY("low"));
       spawnItem("health", 1430, itemLaneY("air"));
     } else if (DEBUG_MODE === "result" || DEBUG_MODE === "book") {
+      book = defaultBook();
       book.stickers.happy = { ...book.stickers.happy, pieces: 3, complete: true, discovered: true };
       book.stickers.golden = { ...book.stickers.golden, pieces: 1, complete: true, discovered: true };
       game.phase = "result";
@@ -364,6 +365,18 @@
       pointer.slide = false;
     });
 
+    canvas.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+    });
+
+    canvas.addEventListener(
+      "touchmove",
+      (event) => {
+        event.preventDefault();
+      },
+      { passive: false },
+    );
+
     document.addEventListener("visibilitychange", () => {
       if (document.hidden && game.phase === "running") game.paused = true;
     });
@@ -377,29 +390,189 @@
     };
   }
 
+  function canvasVisibleRect() {
+    const rect = canvas.getBoundingClientRect();
+    const cssW = Math.max(1, rect.width);
+    const cssH = Math.max(1, rect.height);
+    const viewportW = window.innerWidth || cssW;
+    const viewportH = window.innerHeight || cssH;
+    const left = clamp(Math.max(0, rect.left), rect.left, rect.right);
+    const top = clamp(Math.max(0, rect.top), rect.top, rect.bottom);
+    const right = clamp(Math.min(viewportW, rect.right), rect.left, rect.right);
+    const bottom = clamp(Math.min(viewportH, rect.bottom), rect.top, rect.bottom);
+    return {
+      x: ((left - rect.left) / cssW) * W,
+      y: ((top - rect.top) / cssH) * H,
+      w: Math.max(1, ((right - left) / cssW) * W),
+      h: Math.max(1, ((bottom - top) / cssH) * H),
+    };
+  }
+
+  function currentUiLayout() {
+    const visible = canvasVisibleRect();
+    const mobile =
+      visible.w < W * 0.9 ||
+      visible.h < H * 0.9 ||
+      (window.innerWidth || W) <= 900 ||
+      (window.innerHeight || H) <= 520;
+
+    if (!mobile) {
+      return {
+        mobile: false,
+        compact: false,
+        visible: { x: 0, y: 0, w: W, h: H },
+        controls: {
+          jump: { x: 47, y: 693, w: 256, h: 256 },
+          slide: { x: 1302, y: 693, w: 256, h: 256 },
+        },
+        pause: { x: 1502, y: 20, w: 92, h: 92 },
+        result: {
+          restart: uiRects.restart,
+          book: uiRects.book,
+          snapshot: uiRects.snapshot,
+        },
+        closeBook: uiRects.closeBook,
+        bookGrid: { ...stickerBookGrid, columns: 2 },
+      };
+    }
+
+    const v = visible;
+    const compact = v.w < 720;
+    const margin = clamp(Math.min(v.w, v.h) * 0.045, 18, 30);
+    const rightInset = compact ? margin + 132 : margin;
+    const top = v.y + margin;
+    const pauseSize = compact ? 58 : 82;
+    const buttonSize = clamp(Math.min(v.w * 0.31, v.h * 0.23), 112, 188);
+    const controlY = v.y + v.h - margin - buttonSize;
+    const panel = {
+      x: v.x + margin,
+      y: v.y + margin,
+      w: Math.max(1, v.w - margin * 2),
+      h: Math.max(1, v.h - margin * 2),
+    };
+
+    const resultButtonH = compact ? 52 : 58;
+    const resultGap = compact ? 10 : 14;
+    const result = {};
+    if (compact) {
+      const resultButtonW = Math.min(230, panel.w - 48);
+      const resultX = panel.x + (panel.w - resultButtonW) / 2;
+      const resultY =
+        panel.y + panel.h - margin - resultButtonH * 3 - resultGap * 2;
+      result.restart = { x: resultX, y: resultY, w: resultButtonW, h: resultButtonH };
+      result.book = {
+        x: resultX,
+        y: resultY + resultButtonH + resultGap,
+        w: resultButtonW,
+        h: resultButtonH,
+      };
+      result.snapshot = {
+        x: resultX,
+        y: resultY + (resultButtonH + resultGap) * 2,
+        w: resultButtonW,
+        h: resultButtonH,
+      };
+    } else {
+      const resultButtonW = Math.min(190, (panel.w - margin * 2 - resultGap * 2) / 3);
+      const totalW = resultButtonW * 3 + resultGap * 2;
+      const resultX = panel.x + (panel.w - totalW) / 2;
+      const resultY = panel.y + panel.h - margin - resultButtonH;
+      result.restart = { x: resultX, y: resultY, w: resultButtonW, h: resultButtonH };
+      result.book = {
+        x: resultX + resultButtonW + resultGap,
+        y: resultY,
+        w: resultButtonW,
+        h: resultButtonH,
+      };
+      result.snapshot = {
+        x: resultX + (resultButtonW + resultGap) * 2,
+        y: resultY,
+        w: resultButtonW,
+        h: resultButtonH,
+      };
+    }
+
+    return {
+      mobile: true,
+      compact,
+      visible: v,
+      margin,
+      controls: {
+        jump: { x: v.x + margin, y: controlY, w: buttonSize, h: buttonSize },
+        slide: { x: v.x + v.w - rightInset - buttonSize, y: controlY, w: buttonSize, h: buttonSize },
+      },
+      pause: { x: v.x + v.w - rightInset - pauseSize, y: top, w: pauseSize, h: pauseSize },
+      timer: {
+        x: v.x + v.w - rightInset - pauseSize - (compact ? 88 : 124),
+        y: top + (compact ? 8 : 15),
+        w: compact ? 74 : 104,
+        h: compact ? 34 : 42,
+      },
+      health: {
+        x: v.x + margin,
+        y: top,
+        w: compact ? Math.min(216, v.w - margin * 2 - pauseSize - 16) : 292,
+        h: compact ? 44 : 56,
+      },
+      score: {
+        x: v.x + margin,
+        y: top + (compact ? 58 : 74),
+        w: compact ? Math.min(204, v.w * 0.48) : 232,
+        h: compact ? 50 : 60,
+      },
+      stickers: {
+        x: compact ? v.x + v.w - rightInset - 118 : v.x + margin + 580,
+        y: top + (compact ? 58 : 0),
+        w: compact ? 118 : 220,
+        h: compact ? 50 : 60,
+      },
+      shieldGauge: {
+        x: v.x + margin,
+        y: top + (compact ? 120 : 86),
+        w: compact ? v.w - margin * 2 : 365,
+        h: compact ? 14 : 18,
+      },
+      resultPanel: panel,
+      result,
+      closeBook: {
+        x: compact ? panel.x + (panel.w - 140) / 2 : panel.x + panel.w - 152,
+        y: panel.y + panel.h - margin - (compact ? 50 : 58),
+        w: compact ? 140 : 132,
+        h: compact ? 50 : 58,
+      },
+      bookGrid: {
+        x: panel.x + (compact ? 18 : 32),
+        y: panel.y + (compact ? 90 : 116),
+        w: panel.w - (compact ? 36 : 64),
+        columns: compact ? 1 : 2,
+      },
+    };
+  }
+
   function handlePointer(point) {
+    const layout = currentUiLayout();
     if (game.showBook) {
-      const sticker = stickerAtPoint(point, stickerBookGrid);
+      const sticker = stickerAtPoint(point, layout.bookGrid);
       if (sticker) {
         downloadSticker(sticker);
         return;
       }
-      if (inside(point, uiRects.closeBook)) game.showBook = false;
+      if (inside(point, layout.closeBook)) game.showBook = false;
       return;
     }
 
     if (game.phase === "result") {
-      if (inside(point, uiRects.restart)) resetGame();
-      if (inside(point, uiRects.book)) game.showBook = true;
-      if (inside(point, uiRects.snapshot)) saveSnapshot();
+      if (inside(point, layout.result.restart)) resetGame();
+      if (inside(point, layout.result.book)) game.showBook = true;
+      if (inside(point, layout.result.snapshot)) saveSnapshot();
       return;
     }
 
-    if (distance(point.x, point.y, 1548, 66) < 58) {
+    if (inside(point, layout.pause)) {
       togglePause();
-    } else if (distance(point.x, point.y, 175, 821) < 128) {
+    } else if (inside(point, layout.controls.jump)) {
       jump();
-    } else if (distance(point.x, point.y, 1430, 821) < 128) {
+    } else if (inside(point, layout.controls.slide)) {
       pointer.slide = true;
       startSlide(true);
     } else {
@@ -1547,13 +1720,28 @@
   }
 
   function drawUi() {
+    const layout = currentUiLayout();
+    if (layout.mobile) {
+      drawMobileUi(layout);
+      return;
+    }
     drawHealth();
     drawResourcePill(500, 31, 232, "paw", formatNumber(game.score), "#ff6b73");
     drawResourcePill(760, 31, 220, "sticker", `${completedStickerCount()}/6`, "#ffd44c");
-    drawControls();
-    drawPauseButton();
-    drawShieldGauge();
-    drawTimer();
+    drawControls(layout);
+    drawPauseButton(layout);
+    drawShieldGauge(layout);
+    drawTimer(layout);
+  }
+
+  function drawMobileUi(layout) {
+    drawMobileHealth(layout.health);
+    drawMobileResourcePill(layout.score, "paw", formatNumber(game.score), "#ff6b73");
+    drawMobileResourcePill(layout.stickers, "sticker", `${completedStickerCount()}/6`, "#ffd44c");
+    drawControls(layout);
+    drawPauseButton(layout);
+    drawShieldGauge(layout);
+    drawTimer(layout);
   }
 
   function drawHealth() {
@@ -1566,6 +1754,20 @@
     roundRect(80, 42, 276 * (game.health / 100), 40, 14);
     ctx.fill();
     label(`${Math.round(game.health)} / 100`, 218, 62, 34, "center");
+  }
+
+  function drawMobileHealth(rect) {
+    const icon = rect.h + 20;
+    drawSpriteCell(images.ui, SPRITES.ui.cols, SPRITES.ui.heart, rect.x - 10, rect.y - 10, icon, icon);
+    drawPanel(rect.x + 38, rect.y + 5, rect.w - 38, rect.h - 10, 16, "rgba(19,17,16,0.86)");
+    const fillW = Math.max(0, (rect.w - 54) * (game.health / 100));
+    const gradient = ctx.createLinearGradient(rect.x + 46, 0, rect.x + rect.w, 0);
+    gradient.addColorStop(0, "#ff4d78");
+    gradient.addColorStop(1, "#ff2f79");
+    ctx.fillStyle = gradient;
+    roundRect(rect.x + 46, rect.y + 12, fillW, rect.h - 24, 10);
+    ctx.fill();
+    label(`${Math.round(game.health)}`, rect.x + rect.w * 0.64, rect.y + rect.h / 2 + 1, rect.h * 0.48, "center");
   }
 
   function drawResourcePill(x, y, w, icon, text, color) {
@@ -1581,34 +1783,73 @@
     label(text, x + w * 0.62, y + 35, 38, "center");
   }
 
-  function drawControls() {
-    drawSpriteCell(images.ui, SPRITES.ui.cols, SPRITES.ui.jump, 47, 693, 256, 256);
-    drawSpriteCell(images.ui, SPRITES.ui.cols, SPRITES.ui.slide, 1302, 693, 256, 256);
+  function drawMobileResourcePill(rect, icon, text, color) {
+    drawPanel(rect.x, rect.y, rect.w, rect.h, rect.h * 0.38, "rgba(13, 12, 11, 0.86)");
+    const iconSize = rect.h - 8;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(rect.x + rect.h * 0.5, rect.y + rect.h * 0.5, rect.h * 0.42, 0, Math.PI * 2);
+    ctx.fill();
+    if (icon === "paw") {
+      drawSpriteCell(images.items, SPRITES.items.cols, SPRITES.items.paw, rect.x + 4, rect.y + 4, iconSize, iconSize);
+    }
+    if (icon === "sticker") {
+      drawStickerPreview(STICKERS[0], rect.x + 5, rect.y + 5, iconSize - 2);
+    }
+    label(text, rect.x + rect.w * 0.64, rect.y + rect.h * 0.54, rect.h * 0.55, "center");
+  }
+
+  function drawControls(layout = currentUiLayout()) {
+    if (layout.mobile) {
+      const jump = layout.controls.jump;
+      const slide = layout.controls.slide;
+      drawSpriteCell(images.ui, SPRITES.ui.cols, SPRITES.ui.jump, jump.x, jump.y, jump.w, jump.h);
+      drawSpriteCell(images.ui, SPRITES.ui.cols, SPRITES.ui.slide, slide.x, slide.y, slide.w, slide.h);
+      label("JUMP", jump.x + jump.w / 2, jump.y + jump.h * 0.69, jump.w * 0.15, "center");
+      label("SLIDE", slide.x + slide.w / 2, slide.y + slide.h * 0.69, slide.w * 0.15, "center");
+      return;
+    }
+    drawSpriteCell(images.ui, SPRITES.ui.cols, SPRITES.ui.jump, layout.controls.jump.x, layout.controls.jump.y, layout.controls.jump.w, layout.controls.jump.h);
+    drawSpriteCell(images.ui, SPRITES.ui.cols, SPRITES.ui.slide, layout.controls.slide.x, layout.controls.slide.y, layout.controls.slide.w, layout.controls.slide.h);
     label("JUMP", 175, 870, 40, "center");
     label("SLIDE", 1430, 870, 40, "center");
   }
 
-  function drawPauseButton() {
-    drawSpriteCell(images.pause, 1, 0, 1502, 20, 92, 92);
+  function drawPauseButton(layout = currentUiLayout()) {
+    drawSpriteCell(images.pause, 1, 0, layout.pause.x, layout.pause.y, layout.pause.w, layout.pause.h);
   }
 
-  function drawShieldGauge() {
+  function drawShieldGauge(layout = currentUiLayout()) {
     if (game.shieldTimer <= 0) return;
-    drawPanel(490, 111, 365, 18, 9, "rgba(20,18,16,0.54)");
-    const gradient = ctx.createLinearGradient(490, 0, 855, 0);
+    const rect = layout.mobile ? layout.shieldGauge : { x: 490, y: 111, w: 365, h: 18 };
+    drawPanel(rect.x, rect.y, rect.w, rect.h, rect.h / 2, "rgba(20,18,16,0.54)");
+    const gradient = ctx.createLinearGradient(rect.x, 0, rect.x + rect.w, 0);
     gradient.addColorStop(0, "#55d9ff");
     gradient.addColorStop(1, "#fff27e");
     ctx.fillStyle = gradient;
-    roundRect(490, 111, 365 * clamp(game.shieldTimer / SHIELD_DURATION, 0, 1), 18, 9);
+    roundRect(rect.x, rect.y, rect.w * clamp(game.shieldTimer / SHIELD_DURATION, 0, 1), rect.h, rect.h / 2);
     ctx.fill();
   }
 
-  function drawTimer() {
-    drawPanel(1367, 119, 124, 42, 16, "rgba(20,18,16,0.58)");
-    label(`${Math.ceil(Math.max(0, RUN_LENGTH - game.elapsed))}s`, 1429, 143, 24, "center", "#fff2cf");
+  function drawTimer(layout = currentUiLayout()) {
+    const rect = layout.mobile ? layout.timer : { x: 1367, y: 119, w: 124, h: 42 };
+    drawPanel(rect.x, rect.y, rect.w, rect.h, rect.h * 0.38, "rgba(20,18,16,0.58)");
+    label(
+      `${Math.ceil(Math.max(0, RUN_LENGTH - game.elapsed))}s`,
+      rect.x + rect.w / 2,
+      rect.y + rect.h / 2 + 1,
+      rect.h * 0.58,
+      "center",
+      "#fff2cf",
+    );
   }
 
   function drawMessages() {
+    const layout = currentUiLayout();
+    if (layout.mobile) {
+      drawMobileMessages(layout);
+      return;
+    }
     let y = 304;
     for (const message of game.messages) {
       ctx.save();
@@ -1617,6 +1858,21 @@
       label(message.text, 565, y, 24, "left", message.color);
       ctx.restore();
       y += 52;
+    }
+  }
+
+  function drawMobileMessages(layout) {
+    const v = layout.visible;
+    const w = Math.min(layout.compact ? 360 : 520, v.w - layout.margin * 2);
+    const x = v.x + (v.w - w) / 2;
+    let y = v.y + v.h * (layout.compact ? 0.32 : 0.34);
+    for (const message of game.messages) {
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, (message.life / message.maxLife) * 1.5);
+      drawPanel(x, y - 21, w, 40, 15, "rgba(18,16,15,0.62)");
+      label(message.text, x + w / 2, y, layout.compact ? 17 : 22, "center", message.color);
+      ctx.restore();
+      y += layout.compact ? 44 : 48;
     }
   }
 
@@ -1635,6 +1891,11 @@
   }
 
   function drawResultOverlay() {
+    const layout = currentUiLayout();
+    if (layout.mobile) {
+      drawMobileResultOverlay(layout);
+      return;
+    }
     ctx.fillStyle = "rgba(0,0,0,0.72)";
     ctx.fillRect(0, 0, W, H);
     drawResultCelebration();
@@ -1662,6 +1923,57 @@
     resultButton(uiRects.restart, "다시 달리기", "#ff5e82");
     resultButton(uiRects.book, "스티커북", "#6fc3ff");
     resultButton(uiRects.snapshot, "장면 저장", "#ffd466");
+  }
+
+  function drawMobileResultOverlay(layout) {
+    const panel = layout.resultPanel;
+    const compact = layout.compact;
+    ctx.fillStyle = "rgba(0,0,0,0.72)";
+    ctx.fillRect(0, 0, W, H);
+    drawResultCelebration();
+    drawPanel(panel.x, panel.y, panel.w, panel.h, 24, "rgba(35, 25, 20, 0.96)");
+    ctx.strokeStyle = "rgba(255, 220, 98, 0.55)";
+    ctx.lineWidth = 4;
+    roundRect(panel.x, panel.y, panel.w, panel.h, 24);
+    ctx.stroke();
+
+    label(
+      game.endedByDamage ? "휴식 시간" : "Clear!",
+      panel.x + panel.w / 2,
+      panel.y + (compact ? 46 : 58),
+      compact ? 38 : 54,
+      "center",
+      "#fff4df",
+    );
+    plainText(
+      `점수 ${formatNumber(game.score)}`,
+      panel.x + panel.w / 2,
+      panel.y + (compact ? 88 : 108),
+      compact ? 22 : 30,
+      "center",
+      "#f4d9ba",
+      900,
+    );
+
+    const gained = resultGainedStickers();
+    const remaining = resultRemainingStickers(gained);
+    const buttonTop = Math.min(
+      layout.result.restart.y,
+      layout.result.book.y,
+      layout.result.snapshot.y,
+    );
+    const shelfX = panel.x + (compact ? 18 : 28);
+    const shelfW = panel.w - (compact ? 36 : 56);
+    const gainedY = panel.y + (compact ? 120 : 142);
+    const gainedH = compact ? 152 : 180;
+    const remainingY = gainedY + gainedH + (compact ? 12 : 18);
+    const remainingH = Math.max(130, buttonTop - remainingY - (compact ? 14 : 20));
+
+    drawResultStickerShelfWrapped("획득한 스티커", gained, shelfX, gainedY, shelfW, gainedH, "이번 판 획득 없음");
+    drawResultStickerShelfWrapped("남은 스티커", remaining, shelfX, remainingY, shelfW, remainingH, "모두 획득", true);
+    resultButton(layout.result.restart, "다시 달리기", "#ff5e82");
+    resultButton(layout.result.book, "스티커북", "#6fc3ff");
+    resultButton(layout.result.snapshot, "장면 저장", "#ffd466");
   }
 
   function drawResultCelebration() {
@@ -1720,6 +2032,11 @@
   }
 
   function drawStickerBookOverlay() {
+    const layout = currentUiLayout();
+    if (layout.mobile) {
+      drawMobileStickerBookOverlay(layout);
+      return;
+    }
     ctx.fillStyle = "rgba(0,0,0,0.64)";
     ctx.fillRect(0, 0, W, H);
     drawPanel(296, 108, 1012, 780, 30, "#2c201b");
@@ -1728,34 +2045,54 @@
     resultButton(uiRects.closeBook, "닫기", "#ffd466");
   }
 
-  function drawStickerGrid(x, y, width, mode = "result") {
+  function drawMobileStickerBookOverlay(layout) {
+    const panel = layout.resultPanel;
+    ctx.fillStyle = "rgba(0,0,0,0.64)";
+    ctx.fillRect(0, 0, W, H);
+    drawPanel(panel.x, panel.y, panel.w, panel.h, 24, "#2c201b");
+    label("스티커북", panel.x + panel.w / 2, panel.y + (layout.compact ? 48 : 64), layout.compact ? 38 : 52, "center", "#fff1dc");
+    drawStickerGrid(layout.bookGrid, "book");
+    resultButton(layout.closeBook, "닫기", "#ffd466");
+  }
+
+  function drawStickerGrid(xOrGrid, y, width, mode = "result") {
+    const grid =
+      typeof xOrGrid === "object"
+        ? { x: xOrGrid.x, y: xOrGrid.y, w: xOrGrid.w, columns: xOrGrid.columns || 2 }
+        : { x: xOrGrid, y, w: width, columns: 2 };
+    if (typeof xOrGrid === "object") mode = y || "result";
     if (mode === true) mode = "book";
-    const metrics = stickerGridMetrics(mode);
-    const colW = width / 2;
+    const metrics = stickerGridMetrics(mode, grid.columns);
+    const colW = grid.w / grid.columns;
     for (let i = 0; i < STICKERS.length; i += 1) {
       const sticker = STICKERS[i];
       const state = book.stickers[sticker.id];
-      const cx = x + (i % 2) * colW;
-      const cy = y + Math.floor(i / 2) * metrics.rowH;
+      const complete = Boolean(state.complete);
+      const cx = grid.x + (i % grid.columns) * colW;
+      const cy = grid.y + Math.floor(i / grid.columns) * metrics.rowH;
       const progressX = cx + metrics.textX;
       const progressY = cy + metrics.progressY;
       const progressW = colW - metrics.progressRight;
-      drawPanel(cx, cy, colW - 18, metrics.cardH, 16, "rgba(255,255,255,0.08)");
-      drawStickerPreview(sticker, cx + metrics.iconPad, cy + metrics.iconPad, metrics.iconSize, state.complete ? 1 : 0.32);
-      plainText(stickerLabel(sticker), progressX, cy + metrics.nameY, metrics.nameSize, "left", "#fff8eb", 800);
+      drawPanel(cx, cy, colW - 18, metrics.cardH, 16, complete ? "rgba(255,255,255,0.09)" : "rgba(255,255,255,0.05)");
+      drawStickerPreview(sticker, cx + metrics.iconPad, cy + metrics.iconPad, metrics.iconSize, complete ? 1 : 0.24);
+      plainText(stickerLabel(sticker), progressX, cy + metrics.nameY, metrics.nameSize, "left", complete ? "#fff8eb" : "rgba(255,248,235,0.58)", 800);
       drawPanel(progressX, progressY, progressW, metrics.progressH, metrics.progressH / 2, "rgba(0,0,0,0.35)");
-      ctx.fillStyle = state.complete ? "#ffdd59" : "rgba(255,255,255,0.16)";
-      roundRect(progressX, progressY, progressW * (state.complete ? 1 : 0), metrics.progressH, metrics.progressH / 2);
+      ctx.fillStyle = complete ? "#ffdd59" : "rgba(255,255,255,0.12)";
+      roundRect(progressX, progressY, progressW * (complete ? 1 : 0), metrics.progressH, metrics.progressH / 2);
       ctx.fill();
-      plainText(
-        state.complete ? (mode === "book" ? "받기" : "획득") : "미획득",
-        cx + colW - metrics.stateRight,
-        cy + metrics.nameY,
-        metrics.stateSize,
-        "right",
-        "#f6d9b6",
-        700,
-      );
+      if (mode === "book" && complete) {
+        resultButton(stickerDownloadButtonRect(i, grid), "받기", "#ffd466");
+      } else {
+        plainText(
+          complete ? "획득" : "미획득",
+          cx + colW - metrics.stateRight,
+          cy + metrics.nameY,
+          metrics.stateSize,
+          "right",
+          complete ? "#f6d9b6" : "rgba(246,217,182,0.52)",
+          700,
+        );
+      }
     }
   }
 
@@ -1799,7 +2136,68 @@
     });
   }
 
-  function stickerGridMetrics(mode) {
+  function drawResultStickerShelfWrapped(title, stickers, x, y, width, height, emptyText, dim = false) {
+    drawPanel(x, y, width, height, 16, "rgba(255,255,255,0.08)");
+    plainText(title, x + 18, y + 30, Math.min(24, height * 0.19), "left", "#fff4df", 900);
+
+    if (!stickers.length) {
+      plainText(emptyText, x + width / 2, y + height / 2 + 12, 22, "center", "#d9c2ad", 800);
+      return;
+    }
+
+    const availableW = width - 34;
+    const availableH = Math.max(1, height - 58);
+    const maxCols = Math.max(1, Math.floor(availableW / (dim ? 78 : 96)));
+    const narrow = width < 430;
+    const cols = narrow
+      ? Math.min(stickers.length, 2)
+      : Math.min(stickers.length, Math.max(2, Math.min(3, maxCols)));
+    const rows = Math.ceil(stickers.length / cols);
+    const gapX = dim ? 12 : 16;
+    const gapY = dim ? 22 : 26;
+    const iconSize = Math.floor(
+      Math.min(
+        dim ? 82 : 100,
+        (availableW - gapX * (cols - 1)) / cols,
+        (availableH - gapY * Math.max(0, rows - 1)) / rows - 18,
+      ),
+    );
+    const safeIcon = Math.max(dim ? 54 : 62, iconSize);
+    const totalW = safeIcon * cols + gapX * (cols - 1);
+    const startX = x + (width - totalW) / 2;
+    const startY = y + 50;
+
+    stickers.forEach((sticker, index) => {
+      const col = index % cols;
+      const row = Math.floor(index / cols);
+      const sx = startX + col * (safeIcon + gapX);
+      const sy = startY + row * (safeIcon + gapY);
+      drawStickerPreview(sticker, sx, sy, safeIcon, dim ? 0.56 : 1);
+      plainText(stickerLabel(sticker), sx + safeIcon / 2, sy + safeIcon + 17, Math.min(15, safeIcon * 0.18), "center", "#fff8eb", 800);
+    });
+  }
+
+  function stickerGridMetrics(mode, columns = 2) {
+    if (mode === "book" && columns === 1) {
+      return {
+        rowH: 104,
+        cardH: 88,
+        iconSize: 76,
+        iconPad: 6,
+        textX: 96,
+        nameY: 31,
+        nameSize: 23,
+        progressY: 58,
+        progressH: 12,
+        progressRight: 132,
+        stateRight: 24,
+        stateSize: 17,
+        buttonW: 76,
+        buttonH: 34,
+        buttonPad: 164,
+        buttonY: 27,
+      };
+    }
     if (mode === "book") {
       return {
         rowH: 132,
@@ -1814,6 +2212,10 @@
         progressRight: 164,
         stateRight: 31,
         stateSize: 20,
+        buttonW: 88,
+        buttonH: 40,
+        buttonPad: 18,
+        buttonY: 34,
       };
     }
     return {
@@ -1912,15 +2314,35 @@
   }
 
   function stickerAtPoint(point, grid) {
-    const metrics = stickerGridMetrics("book");
-    const colW = grid.w / 2;
+    const columns = grid.columns || 2;
+    const metrics = stickerGridMetrics("book", columns);
+    const colW = grid.w / columns;
     for (let i = 0; i < STICKERS.length; i += 1) {
-      const cx = grid.x + (i % 2) * colW;
-      const cy = grid.y + Math.floor(i / 2) * metrics.rowH;
-      const rect = { x: cx, y: cy, w: colW - 18, h: metrics.cardH };
-      if (inside(point, rect)) return STICKERS[i];
+      const sticker = STICKERS[i];
+      if (!book.stickers[sticker.id].complete) continue;
+      const cx = grid.x + (i % columns) * colW;
+      const cy = grid.y + Math.floor(i / columns) * metrics.rowH;
+      const rect = stickerDownloadButtonRect(i, grid);
+      const card = { x: cx, y: cy, w: colW - 18, h: metrics.cardH };
+      if (inside(point, rect) && inside(point, card)) return sticker;
     }
     return null;
+  }
+
+  function stickerDownloadButtonRect(index, grid) {
+    const columns = grid.columns || 2;
+    const metrics = stickerGridMetrics("book", columns);
+    const colW = grid.w / columns;
+    const cx = grid.x + (index % columns) * colW;
+    const cy = grid.y + Math.floor(index / columns) * metrics.rowH;
+    const cardW = colW - 18;
+    const buttonW = Math.min(metrics.buttonW, Math.max(72, cardW - metrics.textX - 8));
+    return {
+      x: cx + cardW - buttonW - metrics.buttonPad,
+      y: cy + metrics.buttonY,
+      w: buttonW,
+      h: metrics.buttonH,
+    };
   }
 
   function drawStickerCoin(stickerId, x, y, size) {
@@ -1930,7 +2352,8 @@
 
   function resultButton(rect, text, color) {
     drawPanel(rect.x, rect.y, rect.w, rect.h, 18, color);
-    plainText(text, rect.x + rect.w / 2, rect.y + rect.h / 2 + 1, 25, "center", "#1c1411", 900);
+    const textSize = Math.min(25, rect.h * 0.5, (rect.w / Math.max(4, text.length)) * 1.05);
+    plainText(text, rect.x + rect.w / 2, rect.y + rect.h / 2 + 1, textSize, "center", "#1c1411", 900);
   }
 
   function drawSpriteCell(image, cols, cell, dx, dy, dw, dh, rows = 1) {

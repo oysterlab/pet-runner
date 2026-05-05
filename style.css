@@ -8,13 +8,17 @@
 
 * {
   box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
 }
 
 html,
 body {
   width: 100%;
+  height: 100%;
   min-height: 100%;
   margin: 0;
+  overscroll-behavior: none;
+  touch-action: none;
 }
 
 body {
@@ -22,9 +26,17 @@ body {
   place-items: center;
   min-height: 100svh;
   overflow: hidden;
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
   background:
     radial-gradient(circle at 50% 45%, rgba(255, 204, 126, 0.2), transparent 52%),
     linear-gradient(180deg, #241915 0%, #0d0b0b 100%);
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .game-shell {
@@ -35,6 +47,8 @@ body {
   overflow: hidden;
   background: #1d1511;
   box-shadow: 0 28px 90px rgba(0, 0, 0, 0.42);
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
 }
 
 canvas {
@@ -42,15 +56,72 @@ canvas {
   width: 100%;
   height: 100%;
   touch-action: none;
+  outline: none;
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
   cursor: pointer;
+}
+
+canvas:active,
+canvas:focus {
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 @media (max-aspect-ratio: 1604 / 981) {
   .game-shell {
     width: 100vw;
     height: calc(100vw * 981 / 1604);
+  }
+}
+
+@media (hover: none), (max-width: 900px), (max-height: 520px) {
+  body {
+    min-height: 100dvh;
+    background: #100d0b;
+  }
+
+  .game-shell {
+    width: 100vw;
+    height: 100dvh;
+    aspect-ratio: auto;
+    box-shadow: none;
+  }
+
+  canvas {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 100vw;
+    height: calc(100vw * 981 / 1604);
+    transform: translate(-50%, -50%);
+  }
+}
+
+@media (hover: none) and (min-aspect-ratio: 1604 / 981),
+  (max-height: 520px) and (min-aspect-ratio: 1604 / 981) {
+  canvas {
+    top: 50%;
+    transform: translate(-50%, -50%);
+  }
+}
+
+@media (hover: none) and (max-aspect-ratio: 1604 / 981),
+  (max-width: 900px) and (max-aspect-ratio: 1604 / 981) {
+  canvas {
+    width: calc(100dvh * 1604 / 981);
+    height: 100dvh;
+  }
+}
+
+@media (hover: none) and (orientation: portrait),
+  (max-width: 600px) and (orientation: portrait) {
+  canvas {
+    top: 0;
+    width: calc((100dvh + 96px) * 1604 / 981);
+    height: calc(100dvh + 96px);
+    transform: translateX(-28%);
   }
 }
