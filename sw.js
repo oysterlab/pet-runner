@@ -1,4 +1,4 @@
-const CACHE_NAME = "pet-runner-v4";
+const CACHE_NAME = "pet-runner-v5";
 
 const APP_SHELL = [
   "./",

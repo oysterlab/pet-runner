@@ -14,7 +14,7 @@
   const SHIELD_DURATION = 4.4;
   const STORAGE_KEY = "pet-runner-sticker-quest-v2";
   const DEBUG_MODE = new URLSearchParams(window.location.search).get("debug") || "";
-  const DEBUG_MODES = new Set(["jump", "slide", "hit", "shield", "sticker", "hard", "result", "book", "seam1", "seam2"]);
+  const DEBUG_MODES = new Set(["jump", "slide", "hit", "shield", "sticker", "hard", "result", "book", "seam1", "seam2", "loading"]);
 
   const ASSETS = {
     bg1: "assets/generated/bg-seamless-1.png",
@@ -159,6 +159,7 @@
   let floorOffset = 0;
   let installPromptEvent = null;
   let appInstalled = isPwaInstalled();
+  let assetLoadWarningShown = false;
 
   registerServiceWorker();
   bindInput();
@@ -701,6 +702,18 @@
 
   function requiredAssetsReady() {
     return Object.values(images).every((image) => image.ready && !image.failed);
+  }
+
+  function assetStatus() {
+    const entries = Object.entries(images);
+    const loaded = entries.filter(([, image]) => image.ready && !image.failed).length;
+    const failed = entries.filter(([, image]) => image.failed);
+    return {
+      total: entries.length,
+      loaded,
+      failed,
+      progress: entries.length ? loaded / entries.length : 1,
+    };
   }
 
   function missingAssets() {
@@ -1424,7 +1437,7 @@
   function draw() {
     ctx.clearRect(0, 0, W, H);
 
-    if (!requiredAssetsReady()) {
+    if (DEBUG_MODE === "loading" || !requiredAssetsReady()) {
       drawMissingAssetScreen();
       return;
     }
@@ -1457,35 +1470,268 @@
   }
 
   function drawMissingAssetScreen() {
+    const status = assetStatus();
+    const t = performance.now() * 0.001;
+    const failed = status.failed.length > 0;
+    const progress = failed ? Math.max(0.12, status.progress) : clamp(status.progress, 0.08, 1);
+    const pulse = 0.5 + Math.sin(t * 3.2) * 0.5;
+    const step = Math.floor(t * 1.8) % 4;
+    const visible = canvasVisibleRect();
+    const mobileLoading =
+      visible.w < W * 0.95 ||
+      visible.h < H * 0.95 ||
+      (window.innerWidth || W) <= 900 ||
+      (window.innerHeight || H) <= 520;
+    const margin = mobileLoading ? clamp(Math.min(visible.w, visible.h) * 0.055, 20, 38) : 0;
+    const panelW = mobileLoading ? Math.min(1000, visible.w - margin * 2) : 1000;
+    const panelH = mobileLoading ? Math.min(628, visible.h - margin * 2) : 628;
+    const panelX = mobileLoading ? visible.x + (visible.w - panelW) / 2 : 302;
+    const panelY = mobileLoading ? visible.y + (visible.h - panelH) / 2 : 176;
+    const centerX = panelX + panelW / 2;
+    const titleSize = clamp(Math.min(panelW * 0.07, panelH * 0.12), 38, 62);
+    const catScale = clamp(Math.min(panelW / 1000, panelH / 628), 0.62, 1);
+    const lines = failed
+      ? ["문 앞에서 잠깐 멈췄어요", "다시 출발할 준비를 하는 중"]
+      : loadingSceneText(progress, step);
+
     ctx.fillStyle = "#17110f";
     ctx.fillRect(0, 0, W, H);
-    ctx.fillStyle = "#2b211d";
-    roundRect(302, 176, 1000, 628, 30);
-    ctx.fill();
-    ctx.strokeStyle = "rgba(255,255,255,0.18)";
+
+    const bg = ctx.createLinearGradient(0, 0, 0, H);
+    bg.addColorStop(0, "#3b261d");
+    bg.addColorStop(0.52, "#8f5b35");
+    bg.addColorStop(1, "#1a100c");
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.save();
+    ctx.globalAlpha = 0.26;
+    for (let i = 0; i < 10; i += 1) {
+      const x = (i * 191 - (t * 48) % 191) % (W + 160) - 80;
+      const y = 96 + (i % 5) * 130;
+      drawLoadingPaw(x, y, 26 + (i % 3) * 4, i % 2 ? -0.2 : 0.18);
+    }
+    ctx.restore();
+
+    ctx.save();
+    ctx.globalCompositeOperation = "screen";
+    const glow = ctx.createRadialGradient(W / 2, H * 0.44, 80, W / 2, H * 0.44, 620);
+    glow.addColorStop(0, `rgba(255, 228, 142, ${0.28 + pulse * 0.08})`);
+    glow.addColorStop(1, "rgba(255, 228, 142, 0)");
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+
+    drawPanel(panelX, panelY, panelW, panelH, 34, "rgba(41, 29, 22, 0.9)");
+    ctx.strokeStyle = "rgba(255, 224, 139, 0.46)";
     ctx.lineWidth = 5;
+    roundRect(panelX, panelY, panelW, panelH, 34);
     ctx.stroke();
 
-    ctx.fillStyle = "#fff1dc";
-    ctx.font = "900 48px system-ui, sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText("생성형 에셋을 기다리는 중", W / 2, 252);
+    drawLoadingYarn(panelX + panelW * 0.18, panelY + panelH * 0.56, 72 * catScale, t);
+    drawLoadingCat(centerX + panelW * 0.04, panelY + panelH * 0.53, catScale * (1 + pulse * 0.03), t);
 
-    ctx.fillStyle = "#f0d1b6";
-    ctx.font = "700 26px system-ui, sans-serif";
-    ctx.fillText("asset-prompts.md의 프롬프트로 생성형 이미지를 준비하세요.", W / 2, 324);
-    ctx.fillText("저장 위치와 파일명은 아래와 정확히 맞춰야 합니다.", W / 2, 363);
+    for (let i = 0; i < 5; i += 1) {
+      const x = panelX + panelW * 0.68 + i * 42 * catScale;
+      const y = panelY + panelH * 0.52 + Math.sin(t * 3 + i * 0.7) * 12;
+      drawLoadingPaw(x, y, 22 * catScale, 0.18);
+    }
 
-    ctx.textAlign = "left";
-    ctx.font = "700 24px ui-monospace, SFMono-Regular, Menlo, monospace";
-    const lines = Object.values(ASSETS);
-    const missing = missingAssets();
-    lines.forEach((line, index) => {
-      const isMissing = missing.some((entry) => entry.endsWith(line));
-      ctx.fillStyle = isMissing ? "#ffb6b6" : "#c9ffb7";
-      ctx.fillText(line, 444, 440 + index * 48);
-    });
+    label(failed ? "잠깐만요!" : "곧 출발해요!", centerX, panelY + panelH * 0.16, titleSize, "center", "#fff5df");
+    plainText(lines[0], centerX, panelY + panelH * 0.27, clamp(titleSize * 0.5, 20, 31), "center", "#ffe6b8", 900);
+    plainText(lines[1], centerX, panelY + panelH * 0.34, clamp(titleSize * 0.4, 17, 25), "center", "#f8d5b3", 800);
+
+    const barW = Math.min(636, panelW * 0.68);
+    const barH = clamp(panelH * 0.055, 24, 34);
+    const barX = centerX - barW / 2;
+    const barY = panelY + panelH * 0.8;
+    drawPanel(barX, barY, barW, barH, 17, "rgba(18, 14, 13, 0.72)");
+    const fill = ctx.createLinearGradient(barX, 0, barX + barW, 0);
+    fill.addColorStop(0, failed ? "#ff8f96" : "#ff6f91");
+    fill.addColorStop(0.55, "#ffd466");
+    fill.addColorStop(1, failed ? "#ffd6a8" : "#95df7a");
+    ctx.fillStyle = fill;
+    roundRect(barX + 4, barY + 4, Math.max(28, (barW - 8) * progress), barH - 8, 14);
+    ctx.fill();
+
+    ctx.save();
+    ctx.globalCompositeOperation = "screen";
+    ctx.globalAlpha = 0.35 + pulse * 0.24;
+    ctx.fillStyle = "#fff8d8";
+    roundRect(barX + 8 + (barW - 48) * progress, barY + 8, 28, barH - 16, 10);
+    ctx.fill();
+    ctx.restore();
+
+    plainText(`${Math.round(progress * 100)}%`, centerX, barY + barH + 34 * catScale, clamp(titleSize * 0.45, 18, 28), "center", "#fff1dc", 900);
+
+    if (failed) {
+      if (!assetLoadWarningShown) {
+        assetLoadWarningShown = true;
+        const missing = missingAssets();
+        console.warn("Pet Runner asset load issue:", missing.join(", "));
+      }
+    } else {
+      assetLoadWarningShown = false;
+    }
+  }
+
+  function loadingSceneText(progress, step) {
+    if (progress > 0.86) return ["문이 열리고 있어요", "첫 발자국을 놓는 중"];
+    const copy = [
+      ["발바닥을 말랑하게 데우는 중", "스티커 카드가 반짝이고 있어요"],
+      ["방 안의 간식 냄새를 찾는 중", "고양이 눈이 점점 커지는 중"],
+      ["꼬리를 살짝 흔드는 중", "장애물을 슬쩍 노려보는 중"],
+      ["출발선 앞에서 폴짝", "집 안 모험이 곧 시작돼요"],
+    ];
+    return copy[step % copy.length];
+  }
+
+  function drawLoadingCat(cx, cy, scale, time) {
+    ctx.save();
+    ctx.translate(cx, cy + Math.sin(time * 3) * 5);
+    ctx.scale(scale, scale);
+    ctx.shadowColor = "rgba(0,0,0,0.38)";
+    ctx.shadowBlur = 24;
+    ctx.shadowOffsetY = 12;
+
+    ctx.fillStyle = "#d7d0c7";
+    ctx.beginPath();
+    ctx.ellipse(0, 34, 166, 92, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(98, -42, 94, 82, 0.05, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#8e8781";
+    for (let i = 0; i < 7; i += 1) {
+      ctx.save();
+      ctx.translate(-92 + i * 30, -6 + (i % 2) * 10);
+      ctx.rotate(-0.35);
+      roundRect(-7, -50, 14, 92, 7);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    ctx.fillStyle = "#d7d0c7";
+    ctx.beginPath();
+    ctx.moveTo(40, -100);
+    ctx.lineTo(70, -174);
+    ctx.lineTo(105, -92);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(128, -92);
+    ctx.lineTo(170, -164);
+    ctx.lineTo(182, -78);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = "#f5b5bb";
+    ctx.beginPath();
+    ctx.moveTo(59, -106);
+    ctx.lineTo(70, -140);
+    ctx.lineTo(88, -101);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(146, -94);
+    ctx.lineTo(164, -130);
+    ctx.lineTo(170, -88);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = "#70bd65";
+    ctx.beginPath();
+    ctx.ellipse(112, -56, 104, 86, 0.08, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#d7d0c7";
+    ctx.beginPath();
+    ctx.ellipse(118, -38, 86, 70, 0.02, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#3f312b";
+    ctx.beginPath();
+    ctx.arc(86, -48, 11, 0, Math.PI * 2);
+    ctx.arc(142, -48, 11, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#fff8e8";
+    ctx.beginPath();
+    ctx.arc(90, -53, 4, 0, Math.PI * 2);
+    ctx.arc(146, -53, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#d48a8e";
+    ctx.beginPath();
+    ctx.arc(116, -20, 7, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = "#5e5148";
+    ctx.lineWidth = 5;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(100, -10);
+    ctx.quadraticCurveTo(116, 4, 132, -10);
+    ctx.stroke();
+
+    ctx.strokeStyle = "#f1e5d6";
+    ctx.lineWidth = 3;
+    for (let i = 0; i < 3; i += 1) {
+      ctx.beginPath();
+      ctx.moveTo(72, -18 + i * 10);
+      ctx.lineTo(16, -30 + i * 20);
+      ctx.moveTo(158, -18 + i * 10);
+      ctx.lineTo(216, -30 + i * 20);
+      ctx.stroke();
+    }
+
+    ctx.strokeStyle = "#8e8781";
+    ctx.lineWidth = 28;
+    ctx.beginPath();
+    ctx.moveTo(-154, 12);
+    ctx.quadraticCurveTo(-242, -70 + Math.sin(time * 2.5) * 18, -176, -108);
+    ctx.stroke();
+
+    ctx.shadowBlur = 0;
+    ctx.restore();
+  }
+
+  function drawLoadingYarn(cx, cy, r, time) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(time * 0.8);
+    ctx.fillStyle = "#ff6f91";
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,246,218,0.75)";
+    ctx.lineWidth = 7;
+    for (let i = 0; i < 5; i += 1) {
+      ctx.beginPath();
+      ctx.ellipse(0, 0, r * 0.86, r * (0.18 + i * 0.08), i * 0.72, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawLoadingPaw(cx, cy, size, rotation = 0) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(rotation);
+    ctx.fillStyle = "rgba(255, 216, 126, 0.82)";
+    ctx.beginPath();
+    ctx.ellipse(0, size * 0.22, size * 0.44, size * 0.36, 0, 0, Math.PI * 2);
+    ctx.fill();
+    const toes = [
+      [-0.46, -0.2],
+      [-0.15, -0.42],
+      [0.18, -0.42],
+      [0.48, -0.18],
+    ];
+    for (const [x, y] of toes) {
+      ctx.beginPath();
+      ctx.ellipse(size * x, size * y, size * 0.18, size * 0.22, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
   }
 
   function drawBackground() {
